@@ -13,7 +13,9 @@ import torch.multiprocessing as mp
 from torch.nn.parallel import DistributedDataParallel as DDP
 
 from .resnet import ResNet18, ResNet50, ResNet101
+import time
 
+MODEL = 'resnet101'
 
 # ------ Setting up the distributed environment -------
 def setup(rank, world_size):
@@ -78,43 +80,56 @@ def train_model(rank, args):
         train_loss = 0
         accuracy = 0
         total = 0
-        for idx, (inputs, labels) in enumerate(trainLoader):
-            inputs, labels = inputs.to(rank), labels.to(rank)
+        with torch.profiler.profile(
+            schedule=torch.profiler.schedule(wait=2, warmup=50, active=10, repeat=0),
+            on_trace_ready=torch.profiler.tensorboard_trace_handler(
+                "logs/{}-{}-{}".format(
+                    MODEL,
+                    dist.get_rank(),
+                    time.strftime("%Y%m%d-%H%M%S", time.gmtime())
+                )
+            ),
+            record_shapes=True,
+            with_stack=True,
+        ) as prof:
+            for idx, (inputs, labels) in enumerate(trainLoader):
+                inputs, labels = inputs.to(rank), labels.to(rank)
 
-            optimizer.zero_grad()
+                optimizer.zero_grad()
 
-            outputs = model(inputs)
-            loss = criterion(outputs, labels)
-            loss.backward()
+                outputs = model(inputs)
+                loss = criterion(outputs, labels)
+                loss.backward()
 
-            optimizer.step()
+                optimizer.step()
 
-            train_loss += loss.item()
-            total += labels.size(0)
-            _, prediction = outputs.max(1)
-            accuracy += prediction.eq(labels).sum().item()
+                train_loss += loss.item()
+                total += labels.size(0)
+                _, prediction = outputs.max(1)
+                accuracy += prediction.eq(labels).sum().item()
+                prof.step()
 
-        if rank == 0:
-            print("Epoch: {}, Loss: {}, Training Accuracy: {}". format(epoch+1, loss.item(), accuracy/total))
+            if rank == 0:
+                print("Epoch: {}, Loss: {}, Training Accuracy: {}". format(epoch+1, loss.item(), accuracy/total))
 
-    print("Training DONE!!!")
-    print()
-    print('Testing BEGINS!!')
+        print("Training DONE!!!")
+        print()
+        print('Testing BEGINS!!')
 
-    # Testing
-    test_loss, test_acc, total = 0, 0, 0
-    with torch.no_grad():
-        for idx, (inputs, labels) in enumerate(testLoader):
-            inputs, labels = inputs.to(rank), labels.to(rank)
+        # Testing
+        test_loss, test_acc, total = 0, 0, 0
+        with torch.no_grad():
+            for idx, (inputs, labels) in enumerate(testLoader):
+                inputs, labels = inputs.to(rank), labels.to(rank)
 
-            optimizer.zero_grad()
+                optimizer.zero_grad()
 
-            outputs = model(inputs)
-            loss = criterion(outputs, labels)
+                outputs = model(inputs)
+                loss = criterion(outputs, labels)
 
-            _, prediction = outputs.max(1)
-            total += labels.size(0)
-            test_acc += prediction.eq(labels).sum().item()
+                _, prediction = outputs.max(1)
+                total += labels.size(0)
+                test_acc += prediction.eq(labels).sum().item()
 
     # this condition ensures that processes do not trample each other and corrupt the files by overwriting
     if rank == 0:
