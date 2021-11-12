@@ -12,7 +12,7 @@ import torch.distributed as dist
 import torch.multiprocessing as mp
 from torch.nn.parallel import DistributedDataParallel as DDP
 
-from .resnet import ResNet18, ResNet50, ResNet101
+from resnet import ResNet18, ResNet50, ResNet101
 import time
 
 MODEL = 'resnet101'
