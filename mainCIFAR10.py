@@ -81,7 +81,7 @@ def train_model(rank, args):
         accuracy = 0
         total = 0
         with torch.profiler.profile(
-            schedule=torch.profiler.schedule(wait=2, warmup=50, active=10, repeat=0),
+            schedule=torch.profiler.schedule(wait=2, warmup=10, active=10, repeat=0),
             on_trace_ready=torch.profiler.tensorboard_trace_handler(
                 "logs/{}-{}-{}".format(
                     MODEL,
@@ -109,6 +109,7 @@ def train_model(rank, args):
                 accuracy += prediction.eq(labels).sum().item()
                 prof.step()
 
+            if idx == 30: break
             if rank == 0:
                 print("Epoch: {}, Loss: {}, Training Accuracy: {}". format(epoch+1, loss.item(), accuracy/total))
 
